@@ -396,9 +396,9 @@ sampsize_ori = dim(HFData)[1]
   
   Tobs <- nlpl_iso0 - nlpl_cox0
   
-  plot(x = MySimu$covs - iso$Zk, y = psi_hat, type = 'l')
-  lines(x = MySimu$covs - iso$Zk, y = mybeta*(MySimu$covs - iso$Zk))
-  print(iso$Zk)
+  #plot(x = MySimu$covs - iso$Zk, y = psi_hat, type = 'l')
+  #lines(x = MySimu$covs - iso$Zk, y = mybeta*(MySimu$covs - iso$Zk))
+  #print(iso$Zk)
   
   
   #Generate bootstrap sample
@@ -441,19 +441,23 @@ sampsize_ori = dim(HFData)[1]
   }
   
   T_critical <- quantile(Tn, sig_level)
+```
+
+```{r}
   
+  print(c("critical value =", T_critical))
   
-  print("critical value =", T_critical)
+  print(c("Observed value for test statistic=", Tobs))
   
-  print("Observed value for test statistic=", Tobs)
+  print(c("beta_hat = ", beta_hat))
   
-  print("beta_hat = ", beta_hat)
-  
-  print("p_value=", mean(as.numeric(Tn < Tobs)))
+  print(c("p_value=", mean(as.numeric(Tn < Tobs))))
  
 #save(results200, file = "dataSSurvFixKM200.rda")
 
 ```
+
+
 Plot comparing linear estimator and monotone estimator.
 
 ```{r}
@@ -479,6 +483,17 @@ lines(x = isofit$iso.cov$serum_creatinine - isofit$Zk,
       col = "blue", type = "l", lty = 1, pch = 20)
 legend("topleft", legend = c("monotone hazard model", "Cox model"), lty = c(2,1), col = c("red", "blue"), cex = 1.2)
 ```
+
+
+```{r}
+#Comparing psi_hat
+#monotone hazard model
+iso$iso.cov$psi.hat
+#partial linear model
+isofit$iso.cov$psi.hat
+```
+
+
 
 
 Testing linearity of ejection fraction.

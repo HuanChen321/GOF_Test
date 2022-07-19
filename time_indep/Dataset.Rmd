@@ -325,6 +325,7 @@ https://bmcmedinformdecismak.biomedcentral.com/track/pdf/10.1186/s12911-020-1023
 https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0181001
 ```{r}
 library(survival)
+library(isoSurv)
 
 HFData <- na.omit(read.csv("D:/0My research/data/heart_failure_clinical_records_dataset.csv"))
 #library(isoph)
@@ -458,6 +459,24 @@ Plot comparing linear estimator and monotone estimator.
 ```{r}
 plot(x = iso$iso.cov$covs - iso$Zk, y = psi_hat, xlab = 'Z-Zk', ylab = 'Fitted value', col = "red", type = "b", pch = 20, lty = 2)
 lines(x = iso$iso.cov$covs - iso$Zk, y = mybeta*(iso$iso.cov$covs - iso$Zk), col = "blue", type = "l", lty = 1, pch = 20)
+legend("topleft", legend = c("monotone hazard model", "Cox model"), lty = c(2,1), col = c("red", "blue"), cex = 1.2)
+```
+
+```{r}
+##Partial Linear
+coxfit <- coxph(Surv(time, DEATH_EVENT) ~ ., HFData)
+isofit <- isoph(Surv(time, DEATH_EVENT) ~ iso(serum_creatinine, shape = "inc") 
+                + age + anaemia + creatinine_phosphokinase + diabetes + ejection_fraction + high_blood_pressure
+                + platelets + serum_sodium + sex+smoking, data = HFData)
+
+beta_hat <- coxfit$coefficients[8]#betahat for serum creatinine
+plot(x = isofit$iso.cov$serum_creatinine - isofit$Zk, 
+     y = isofit$iso.cov$psi.hat, 
+     xlab = 'Z-Zk', ylab = 'Fitted value', 
+     col = "red", type = "b", pch = 20, lty = 2)
+lines(x = isofit$iso.cov$serum_creatinine - isofit$Zk, 
+      y = beta_hat*(isofit$iso.cov$serum_creatinine - isofit$Zk), 
+      col = "blue", type = "l", lty = 1, pch = 20)
 legend("topleft", legend = c("monotone hazard model", "Cox model"), lty = c(2,1), col = c("red", "blue"), cex = 1.2)
 ```
 

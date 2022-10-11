@@ -1,0 +1,1 @@
+test_cox_Tcox <- Power_unicox_vs_multicox(Z, phiZ = hzrate1, W = W, beta_trt = c(1), B = B_size, samp_size = sampsize_ori, k = k, qt = 0.93, cox = 1)#0.93

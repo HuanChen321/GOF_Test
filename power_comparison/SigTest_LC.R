@@ -13,7 +13,7 @@ library(foreach)
 library(parallel)
 library(doSNOW)
 
-cl <- makeCluster(30)
+cl <- makeCluster(24)
 registerDoSNOW(cl)
 #
 pb <- txtProgressBar(max = B_rep, style = 3)
@@ -47,16 +47,15 @@ TSLC <- foreach(k = 1:B_rep,
                     
                     #when true model for hazard is Cox model
                     #Univariate Cox model vs multivariate Cox model
-                    test_cox_Tcox <- Power_unicox_vs_multicox(Z, phiZ = hzrate1, W = W, beta_trt = c(1), B = B_size, samp_size = sampsize_ori, k = k, qt = 0.93)#0.93
-                    #Univariate Cox model vs multivariate Cox model
-                    test_pl_Tcox <- Power_unicox_vs_multicox(Z, phiZ = hzrate_m1, W = W, beta_trt = c(1), B = B_size, samp_size = sampsize_ori, k = k, qt = 0.9)#0.9
-                    
+                    test_cox_Tcox <- Power_unicox_vs_multicox(Z, phiZ = hzrate1, W = W, beta_trt = c(0), B = B_size, samp_size = sampsize_ori, k = k, qt = 0.93)#0.93
+                    #Monotone hazard model vs partial linear model
+                    test_pl_Tcox <- Power_mono_vs_partial(Z, phiZ = hzrate1, W = W, beta_trt = c(0), B = B_size, samp_size = sampsize_ori, k = k, qt = 0.93)#0.93
                     
                     #when true model for hazard is partial linear model
+                    #Univariate Cox model vs multivariate Cox model
+                    test_cox_Tpl <- Power_unicox_vs_multicox(Z, phiZ = hzrate_m1, W = W, beta_trt = c(0), B = B_size, samp_size = sampsize_ori, k = k, qt = 0.9)#0.9
                     #Monotone hazard model vs partial linear model
-                    test_cox_Tpl <- Power_mono_vs_partial(Z, phiZ = hzrate1, W = W, beta_trt = c(1), B = B_size, samp_size = sampsize_ori, k = k, qt = 0.93)#0.93
-                    #Monotone hazard model vs partial linear model
-                    test_pl_Tpl <- Power_mono_vs_partial(Z, phiZ = hzrate_m1, W = W, beta_trt = c(1), B = B_size, samp_size = sampsize_ori, k = k, qt = 0.9)#0.9
+                    test_pl_Tpl <- Power_mono_vs_partial(Z, phiZ = hzrate_m1, W = W, beta_trt = c(0), B = B_size, samp_size = sampsize_ori, k = k, qt = 0.9)#0.9
                     
                     
                     return(list("test_cox_Tcox" = test_cox_Tcox,
@@ -74,4 +73,4 @@ end_time = Sys.time()
 cat('Time used:\n')
 print(end_time - start_time)
 
-save(TSLC, file = "PowerComp100s100iter100bt.rda")
+save(TSLC, file = "SizeComp100s100iter100bt.rda")

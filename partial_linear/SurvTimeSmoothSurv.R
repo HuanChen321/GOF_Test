@@ -1,10 +1,10 @@
-#Generating survival time by Breslow-type estimator 
+#Generating survival time by Breslow-type estimator using monotone hazard model or cox model
 #using beta_hat, covariate, observed survival time and Status.
 #the output is ordered by corresponding covariate.
 
-SurvTime <- function(beta, data, linear_covs){
+SurvTime <- function(psi, data){
+  #psi = phi(Z)+W*beta
   #Z = data$covs, X= data$stop, Status = data$event
-  #W = linear_covs
   ##Z: monotone covariate
   ##W: linear covariates
   ##X: observed survival time
@@ -12,8 +12,8 @@ SurvTime <- function(beta, data, linear_covs){
   
   
   #sort by observed survival time to evaluate the integral
+  psi <- psi[order(data$stop)]
   data <- data[order(data$stop), ]
-  W <- W[order(data$stop), ]
   Z <- data$covs
   Status <- data$event
   X <- data$stop
@@ -24,12 +24,12 @@ SurvTime <- function(beta, data, linear_covs){
   nstar <- sum(Status)
   Tstar <- X[Status == 1]
  
-  Baseline <- -log(runif(samp_size))/exp(beta[1]*Z + as.matrix(W)%*%as.matrix(beta[2:length(beta)]))
+  Baseline <- -log(runif(samp_size))/exp(psi)
   
   risk <- cumsum(Status)
   denom <- c()
   for (i in 1:nstar) {
-    denom[i] <- sum(exp(beta[1]*Z + as.matrix(W)%*%as.matrix(beta[2:length(beta)]))[risk >= i])
+    denom[i] <- sum(exp(psi)[risk >= i])
   }
   BSEst <- cumsum(1/denom)
   

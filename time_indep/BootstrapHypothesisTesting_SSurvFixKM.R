@@ -35,6 +35,10 @@ BHT_CB <- foreach(k = 1:B_rep,
    source('myisoph_initial.R')
    assignInNamespace("isoph.initial", isoph.initial, pos = "package:isoSurv")
    
+   #control the maximum number of iteration and eps for convergence.
+   source('myisoph_picm.R')#set d.e = max(abs(psi.new - psi))
+   assignInNamespace("isoph.picm", isoph.picm, pos = "package:isoSurv")
+   
   set.seed(k)
   Z <- sort(runif(sampsize_ori, min = 0.1, max = 2))
   hzrate0 = 0*Z
@@ -94,11 +98,4 @@ cat('Time used:\n')
 print(end_time - start_time)
 
 
-# stopImplicitCluster()
-# stopCluster(cl)
-# 
-# end_time = Sys.time()
-# cat('Time used:\n')
-# print(end_time - start_time)
-
-save(BHT_CB, file = "BHT02SSurvFixKMmaxX1000s500b.rda")
+save(BHT_CB, file = "BHT02SSurvFixKMmaxX1000s500b500i_CHECK.rda")

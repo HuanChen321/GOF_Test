@@ -324,6 +324,7 @@ https://bmcmedinformdecismak.biomedcentral.com/track/pdf/10.1186/s12911-020-1023
 
 https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0181001
 ```{r}
+library(isoSurv)
 
 HFData <- na.omit(read.csv("D:/0My research/data/heart_failure_clinical_records_dataset.csv"))
 #library(isoph)
@@ -331,11 +332,11 @@ fit1 <- coxph(Surv(time, DEATH_EVENT)~., HFData)
 summary(fit1)
 ```
 
-censoring rate
-
 ```{r}
+#censoring rate
 1-mean(HFData$DEATH_EVENT)
 ```
+
 ```{r}
 plot(x = HFData$serum_creatinine,  y = HFData$time)
 lines(x = HFData$serum_creatinine[HFData$DEATH_EVENT > 0], y = HFData$time[HFData$DEATH_EVENT > 0], type = 'p', col = 'red')
@@ -454,13 +455,18 @@ sampsize_ori = dim(HFData)[1]
 #save(results200, file = "dataSSurvFixKM200.rda")
 
 ```
+
 Plot comparing linear estimator and monotone estimator.
 
 ```{r}
-plot(x = iso$iso.cov$covs - iso$Zk, y = psi_hat, xlab = 'Z-Zk', ylab = 'Fitted value', col = "red", type = "b", pch = 20, lty = 2)
-lines(x = iso$iso.cov$covs - iso$Zk, y = mybeta*(iso$iso.cov$covs - iso$Zk), col = "blue", type = "l", lty = 1, pch = 20)
-legend("topleft", legend = c("monotone hazard model", "Cox model"), lty = c(2,1), col = c("red", "blue"), cex = 1.2)
+plot(x = iso$iso.cov$covs + iso$Zk, y = psi_hat, 
+     xlab = 'Serum Creatinine (Z)', 
+     ylab = expression(paste("Fitted Value for ", phi(Z))), 
+     col = "red", type = "s", pch = 20, lty = 1)
+lines(x = iso$iso.cov$covs + iso$Zk, y = mybeta*(iso$iso.cov$covs - iso$Zk), col = "blue", type = "l", lty = 2, pch = 20)
+legend("topleft", legend = c("monotone hazard model", "Cox model"), lty = c(1,2), col = c("red", "blue"), cex = 1.2)
 ```
+
 
 
 Testing linearity of ejection fraction.
@@ -1099,8 +1105,8 @@ sampsize_ori = dim(MGData)[1] #500
 
 ```{r}
 library(JM)
-# mydata_tind <- aids.id
-# mydata_td <- aids
+mydata_tind <- aids.id
+mydata_td <- aids
 ```
 
 ```{r}
@@ -1209,11 +1215,19 @@ sampsize_ori = dim(aids.id)[1]
 
 ```
 
+
 ```{r}
-plot(x = MySimu$covs - iso$Zk, y = psi_hat, xlab = 'Z-Zk', ylab = 'Fitted value', col = "red", type = "b", pch = 20, lty = 2)
-lines(x = MySimu$covs - iso$Zk, y = mybeta*(MySimu$covs - iso$Zk), col = "blue", type = "l", lty = 1, pch = 20)
-legend("topleft", legend = c("monotone hazard model", "Cox model"), lty = c(2,1), col = c("red", "blue"), cex = 1.2)
+plot(x = -(MySimu$covs + median(MySimu$covs)), y = psi_hat, 
+     xlab = 'CD4 Cell Count (Z)', 
+     ylab = expression(paste("Fitted Value for ", phi(Z))), 
+     col = "red", type = "s", pch = 20, lty = 1)
+lines(x = -(MySimu$covs + isofit$Zk), y = mybeta*(MySimu$covs - iso$Zk), col = "blue", type = "l", lty = 2, pch = 20)
+legend("topright", legend = c("monotone hazard model", "Cox model"), lty = c(1,2), col = c("red", "blue"), cex = 1.2)
 ```
+
+
+
+
 
 ```{r}
 #in JM package

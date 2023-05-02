@@ -43,17 +43,18 @@ SurvTime <- function(beta, MySimu){
   MySimu$X <- res
   MySimu <- MySimu[order(MySimu$covs),]
   
-  #smoothing survival time
-  observed <- seq(samp_size)[MySimu$event > 0]
-  for (i in 1:(nstar-1)) {
-    nums <- observed[i] - observed[i+1]
-    if(nums >= 2){
-      MySimu$X[(observed[i]+1) : (observed[i+1]-1)] <- sort(runif(nums - 1, 
-                                                       min = MySimu$X[observed[i]], 
-                                                       max = MySimu$X[observed[i+1]]), decreasing = TRUE)
-    }
-  }
-  MySimu$X[observed[i+1]:samp_size] <- jitter(MySimu$X[observed[i+1]:samp_size], factor = 2)
+  # #smoothing survival time
+  # observed <- seq(samp_size)[MySimu$event > 0]
+  # for (i in 1:(nstar-1)) {
+  #   nums <- observed[i] - observed[i+1]
+  #   if(nums >= 2){
+  #     MySimu$X[(observed[i]+1) : (observed[i+1]-1)] <- sort(runif(nums - 1, 
+  #                                                      min = MySimu$X[observed[i]], 
+  #                                                      max = MySimu$X[observed[i+1]]), decreasing = TRUE)
+  #   }
+  # }
+  # MySimu$X[observed[i+1]:samp_size] <- abs(jitter(MySimu$X[observed[i+1]:samp_size], factor = 2))
+  
   return(list("res" = MySimu$X,
               "urates" = num_largeu/samp_size))
 }

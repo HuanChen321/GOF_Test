@@ -26,17 +26,31 @@ for(vn in var_names_nc){
 
 for(i in 1:500){
   for (vn in var_names){
-    cmd = paste0(vn ,'[i] <- as.numeric(BHT_CB[[i]]$', vn, '$T_obs < BHT_CB[[i]]$', vn, '$T_critical)')
+    cmd = paste0(vn ,'[i] <- as.numeric(BHT_CB[[i]]$', vn, '$p_value < 0.05)')
     eval(parse(text = cmd))
   }
 }
 
 for(i in 1:500){
   for (vn in var_names_nc){
-    cmd = paste0(vn ,'[i] <- as.numeric(BHT_CB[[i]]$', vn, '$T_obs < BHT_CB[[i]]$', vn, '$T_critical)')
+    cmd = paste0(vn ,'[i] <- as.numeric(BHT_CB[[i]]$', vn, '$p_value<0.05)')
     eval(parse(text = cmd))
   }
 }
+
+# for(i in 1:500){
+#   for (vn in var_names){
+#     cmd = paste0(vn ,'[i] <- as.numeric(BHT_CB[[i]]$', vn, '$T_obs < BHT_CB[[i]]$', vn, '$T_critical)')
+#     eval(parse(text = cmd))
+#   }
+# }
+# 
+# for(i in 1:500){
+#   for (vn in var_names_nc){
+#     cmd = paste0(vn ,'[i] <- as.numeric(BHT_CB[[i]]$', vn, '$T_obs < BHT_CB[[i]]$', vn, '$T_critical)')
+#     eval(parse(text = cmd))
+#   }
+# }
 
 #Type I error or power
 for(vn in var_names){

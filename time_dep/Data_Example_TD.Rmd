@@ -1,0 +1,546 @@
+---
+title: "Data Example: Time-dependent Covariate"
+author: "Huan Chen"
+date: '2023-03-23'
+output: html_document
+---
+
+```{r}
+#Generating survival time by Breslow-type estimator 
+#using beta_hat, covariate, observed survival time and Status.
+#the output has the same order as Z
+
+SurvTime_td <- function(beta, OST, Status, Z, X){
+  #beta: beta_hat
+  #OST: Observed survival time, pmin(T, C)
+  #Status: uncensored=1, censored=0.
+  #Z: time-dependent covariate, a list
+  #X: jump points for Z
+  
+  X <- X[-1]#drop the first 0 since we only need the right endpoint
+  
+  #define Z^star_(i)
+  n <- length(Status)
+  loc <- seq(n)[Status > 0]
+  
+  zn_star <- sum(Status)
+  Z_star <- c()
+  
+  for(i in 1:zn_star){
+    Z_star[i] <- Z[[loc[i]]][length(Z[[loc[i]]])]
+  }
+  
+  Z_star <- sort(unique(Z_star))#unique covariate for failed subjects at the time of failure
+  zn_star <- length(Z_star)#number of risk set
+  I <- c(Z_star, Inf)
+  
+  #Brewslow-type estimator for cumulative baseline hazard 
+  
+  #dN_star and T_star
+  T_fail <- OST[Status > 0]
+  T_star <- sort(unique(T_fail))#unique time for failure
+  tn_star <- length(T_star)
+  
+  dN_star <- c()
+  for (i in 1:tn_star) {
+    dN_star[i] <- sum(T_fail == T_star[i])
+  }
+  
+  #i. Lambda0hat
+  dLambda0hat <- c()
+  
+  Y_star <- matrix(nrow = tn_star, ncol = zn_star)
+  #Y_star[i,j] = Ystar_j(T_i)
+  #column j constains R_j at T_star[1] to T_star[tn_star] 
+  
+  for (i in 1:tn_star) {
+    # print(paste0('i=',i))
+    
+    #R = [R1(T_star_i),...,Rzn_star(T_star_i)]
+    
+    for (j in 1:zn_star) {
+      
+      
+      #R_j(T_star_i)
+      R <- c()
+      
+      for (h in 1:n) {
+        # if(i == 13 & h == 11){
+        #   print(h)
+        # }
+        #Is Z[[h]](T_star_i) in R_j(T_star_i)
+        
+        m <- length(Z[[h]])
+        
+        #what if Z[[h]] is not long enough
+        if (m < length(X)) Z[[h]] <- c(Z[[h]], rep(Z[[h]][m], length(X)-m))
+        
+        if(OST[h] >= T_star[i])#(1)
+        {
+          #(2)
+          Z_hT <- Z[[h]][min(seq(m)[(X >= T_star[i])[1:m]])]
+          #(3)
+          if((Z_hT >= I[j]) & (Z_hT < I[j+1]))
+            R <- c(R, h)
+        }
+      }
+      Y_star[i,j] <- length(R)
+    }
+  }
+  
+  ##dLambda0hat
+  #use Y_star, dN_star and Z_star
+  num <- dN_star
+  denom <- colSums(t(Y_star)*exp(beta*Z_star))
+  
+  dLambda0hat <- num/denom
+  Lambda0hat <- cumsum(dLambda0hat)
+  
+  
+  #TX
+  TX = sort(unique(c(X, T_star)))
+  nTX <- length(TX)
+  Lambda0TX <- rep(Lambda0hat[1], nTX)
+  
+  for (i in 2:tn_star) {
+    loc <- min(seq(nTX)[TX >= T_star[i]])
+    Lambda0TX[loc:nTX] <- Lambda0hat[i]
+  }
+  
+  
+  
+  
+  #ii. w
+  
+  SurvTime <- c()
+  urate <- 0
+  
+  for (j in 1:n) {
+    Zj <- c()
+    
+    if(OST[j] < min(X, T_star))######################corrected
+      TXj <- OST[j]
+    else
+      TXj <- sort(unique(c(X[X<=OST[j]],T_star[T_star <= OST[j]])))
+    
+    nj <- length(TXj)
+    loc <- 1
+    i <- 1
+    
+    while(i <= nj) {
+      if(TXj[i] <= X[loc]){
+        Zj[i] <- Z[[j]][loc]
+        i <- i + 1
+      }
+      else{
+        loc <- loc + 1
+      }
+    }
+    
+    #############################Survival Time##################################
+    RHS <- -log(runif(1))
+    LHS <- cumsum(exp(beta*Zj)*diff(Lambda0TX)[1:nj])
+    #cat(RHS, LHS, nj)
+    
+    # error_found <- 0 
+    # tryCatch({ some_result <- if(RHS > LHS[nj]){cat('')} }, error = function(e) { error_found <<- 1 } )
+    # if (error_found){
+    #   cat("debug stop here")
+    # }
+    
+    
+    if( RHS > LHS[nj] ){
+      SurvTime[j] <- abs(jitter(OST[j]))
+      urate <- urate + 1
+    }
+    else
+      SurvTime[j] <- TXj[min(seq(nj)[LHS>=RHS])]
+  }
+  
+  
+  urate <- urate/n
+  
+  
+  
+  
+  
+  # MySimu$X <- res
+  # MySimu <- MySimu[order(MySimu$covs),]
+  # 
+  # #smoothing survival time
+  # observed <- seq(samp_size)[MySimu$event > 0]
+  # for (i in 1:(nstar-1)) {
+  #   nums <- observed[i] - observed[i+1]
+  #   if(nums >= 2){
+  #     MySimu$X[(observed[i]+1) : (observed[i+1]-1)] <- sort(runif(nums - 1, 
+  #                                                      min = MySimu$X[observed[i]], 
+  #                                                      max = MySimu$X[observed[i+1]]), decreasing = TRUE)
+  #   }
+  # }
+  # MySimu$X[observed[i+1]:samp_size] <- jitter(MySimu$X[observed[i+1]:samp_size], factor = 2)
+  return(list("res" = SurvTime,
+              "urates" = urate))
+}
+
+```
+
+```{r}
+#Generating censoring time using Kaplan Meier estimator with uniform noise.
+
+CenTime_td <- function(X, Status, M=max(X)){
+  #X: observed survival time
+  #Status: uncensored=1, censored=0
+  #M: 
+  
+  n <- length(X)
+  res <- X
+  obs <- seq(from = 1, to  = n)[Status == 1]
+  Status0 <- Status
+  X0 <- X
+  
+  #sort the data by observed survival time
+  Status <- Status[order(X)]
+  X <- sort(X)
+  
+  ind <- 1:n
+  LHS <- ((n-ind)/(n-ind+1))^Status
+  LHS <- cumprod(LHS)
+  KMEst <- LHS[Status == 0]#LHS
+  
+  Nc <- n - sum(Status)#number of censored cases
+  
+  Tcen <- X[Status == 0]#vector of censoring time
+  num_largeu <- 0#record the time when the inequality doesn't hold
+  
+  
+  for (i in obs) {
+    Ci <- min(seq(Nc)[KMEst <= runif(1)])
+    if(Ci == Inf){
+        res[i] <- Tcen[Nc]#in case min(KMEst) > u[i]
+        num_largeu <- num_largeu + 1
+      }
+    else{
+        res[i] <- Tcen[Ci]
+      }
+      
+    #conditiong on generated censoring time is larger than the survival time.
+    if (res[i] <= X0[i]){
+        res[i] <- runif(n = 1, min = X0[i], max = M)
+        #the observed survival time must be smaller than the upperbound of censoring distribution
+    }
+    
+  }
+  
+  return(list("res" = abs(jitter(res, factor = 2)),
+              "urate" = num_largeu/n))
+}
+```
+
+
+```{r}
+#estimating phi which is a monotone function in covariate Z while Z is time-dependent
+#allow ties
+#returns psi_hat, beta_hat, whether converges and likelihood for monotone and cox hazard model
+
+library(Iso)
+library(survival)
+
+isoph_td <- function(Start, Stop, Z, Status,K = median(Z), maxiter = 500, eps = 1e-2){
+  
+  n = length(Status)
+  Data0 = data.frame(Start, Stop, Z, Status)
+  Data0 = Data0[order(Data0$Z),]
+  
+  #start from the first observed failure
+  location_start <- min(seq(n)[Data0$Status > 0])
+  Data <- Data0[location_start:n,]
+  
+  z = Data$Z
+  status = Data$Status
+  start = Data$Start
+  stop = Data$Stop
+  n = length(status)
+    
+  z.obs = unique(z[status == 1])
+  m = length(z.obs)
+  
+  t.obs = sort(unique(stop))
+  nt = length(t.obs)
+  
+  #anchor
+  k = sum(z.obs < K)
+  if(k == 0) k=1
+  zk = z.obs[k]
+  
+  #counting process
+  Y=dN=matrix(0,n,nt)
+  for (i in 1:n) {
+    rank.t = which(stop[i]==t.obs)
+    Y[i,][1:rank.t] = 1
+    if(status[i] == 1) dN[i,][rank.t] = 1
+  }
+  
+  #initial
+  z.bar = z - zk
+  
+  coxfit <- coxph(Surv(start,stop,status) ~ z.bar, control = coxph.control(timefix = FALSE))
+  
+  beta.hat = max(0.01, coxfit$coefficients)
+  psi = beta.hat*(z.obs - zk)
+  betaZ = psi
+  
+  #picm
+  Y2 = dN2 = matrix(0, m, nt)#Ystar
+  
+  z.obs = c(z.obs,Inf)
+  
+  for(h in 1:m){
+    #risk set (z)
+    idx = which(z.obs[h] <= z & z < z.obs[h+1])#idx in {1,...,n}
+    
+    for(ht in idx){
+      #risk set (t)
+      Y2[h, ] = Y2[h, ] + Y[ht, ]*(start[ht]< t.obs)*(stop[ht]>= t.obs)  
+      dN2[h, ] = dN2[h, ] + dN[ht, ]
+    }
+    
+  }
+  
+  dNsum = colSums(dN2)
+  Delta = rowSums(dN2)
+  
+  iter = 0
+  d.e = 1
+  while (d.e > eps) {
+    iter = iter + 1
+    if(iter > maxiter) break
+    
+    den = colSums(Y2*exp(psi))
+    index.zero = which(den > 0)
+    
+    weight = c()
+    for (s in 1:m) 
+      weight[s] = sum((Y2[s,]*dNsum/den)[index.zero])
+      
+    exp.psi.new = pava(Delta/weight, weight)
+    psi.new = log(exp.psi.new)
+    
+    d.e = sum(abs(exp(psi.new) - exp(psi))) # mean
+    psi = psi.new
+    
+  }
+  
+  psi.new = psi.new - psi.new[k]
+  
+  conv = 0
+  if(d.e < eps) conv = 1
+  
+  #compute psi.full
+  psi.full = rep(NA, length(Data0$Z))
+  for (j in 1:m)
+    psi.full[which(Data0$Z %in% z.obs[j])] = psi.new[j]
+  
+  if(is.na(psi.full[1]))
+    psi.full[1] = -Inf
+  
+  which.na = which(is.na(psi.full))
+  if(length(which.na) > 0){
+    for (j in which.na) {
+      psi.full[j] = psi.full[j-1]
+    }
+  }
+  
+  
+  
+  ##negative log partial likelihood
+  
+  #monotone
+  ll_mono1 <- -sum(psi.new*Delta)
+  ll_mono2 <- sum(log(1e-3+colSums(Y2*exp(psi.new)))*dNsum)
+  ll_mono <- ll_mono1 + ll_mono2
+  
+  if(is.na(ll_mono)){
+    cat('bib')
+  }
+  
+  #cox
+  ll_linear1 <- -sum(betaZ*Delta)
+  ll_linear2 <- sum(log(colSums(Y2*exp(betaZ)))*dNsum)
+  ll_linear <- ll_linear1 + ll_linear2
+  if(is.na(ll_linear)){
+    cat('bib')
+  }
+  
+  return(list(Z= Data0$Z,psi.hat = psi.full, zk = zk, betahat = beta.hat, conv = conv, ll_linear = ll_linear, ll_mono = ll_mono))
+  
+}
+
+```
+
+### CD4 Cell Counts
+
+The time-independent version dataset has been used as an example for the test with time-independent covariate.
+
+```{r}
+#in JM package
+#pbc2.id is time independent
+#pbc2 is time dependent
+library(JM)
+# mydata_tind <- aids.id
+mydata_aids <- aids
+summary(mydata_aids)
+```
+
+```{r, warning = FALSE}
+B_rep = 1  #500
+B_size = 100
+samp_size = max(as.numeric(mydata_aids$patient))
+
+sig_level <- 0.05
+
+
+#the dataset is already reshaped, need to recover the original data###############################################################
+MySimu_ori <- data.frame(
+  patient = unique(mydata_aids$patient),
+  start = tapply(mydata_aids$start, mydata_aids$patient, min),
+  stop = tapply(mydata_aids$stop, mydata_aids$patient, max),
+  event = tapply(mydata_aids$event, mydata_aids$patient, tail, 1)
+)
+# Create a list of CD4 values for each patient
+Z_real <- split(-mydata_aids$CD4, mydata_aids$patient)
+
+
+#Reshaped data#####################################################################################################################
+MySimu<- data.frame("start" = mydata_aids$start, "end" = mydata_aids$stop, "covs" = -mydata_aids$CD4, "event" = mydata_aids$event)
+
+##Start from the first observed failure
+sample_size <- dim(MySimu)[1]#update sample size
+MySimu <- MySimu[order(MySimu$covs),]
+location_start <- min(seq(sample_size)[MySimu$event > 0])
+MySimu <- MySimu[location_start:sample_size,]
+
+iso <- isoph_td(Start = MySimu$start, Stop = MySimu$end, Status = MySimu$event, Z = MySimu$covs)
+psi_hat <- iso$psi.hat
+mybeta <- iso$betahat
+
+Tobs <- iso$ll_mono - iso$ll_linear
+
+
+#Generate bootstrap sample##########################################################################################################
+
+#endpoints for subintervals of time
+T_obs <- sort(unique(mydata_aids$obstime))
+T_obs[length(T_obs)+1] <- 1000
+
+Tn <- c()
+
+for (i in 1:B_size) {
+  
+  #survival time
+  survgen <- SurvTime_td(beta = mybeta, OST = MySimu_ori$stop, Status = MySimu_ori$event, Z = Z_real, X = T_obs)#all patients start from 0
+  survtime_B <- survgen$res
+  
+  #censoring time
+  cengen <- CenTime_td(X= MySimu_ori$stop, Status = MySimu_ori$event, M=max(MySimu_ori$stop))
+  centime_B <-cengen$res
+  
+  OST_B <- pmin(survtime_B, centime_B)#observed survival time
+  #hist(log(OST_B), main = paste0('log BT OST, k=', k,', n=100, B=',i))
+  Delta_B <- as.numeric(survtime_B <= centime_B)
+  X_B <- pmin(survtime_B, centime_B)
+  
+  #reshape the data
+  Start_B <- c()
+  End_B <- c()
+  Covariate_B <- c()
+  Status_B <- c()
+  n <- 1
+  
+  for (rows in 1:samp_size){
+    
+    loc <- max(1, seq(length(T_obs))[T_obs < OST_B[rows]])
+    
+    if(loc > 1){
+      
+      Start_B[n:(n+loc-1)] <- T_obs[1:loc]
+      
+      End_B[n:(n+loc-2)] <- T_obs[2:loc]
+      End_B[n+loc-1] <- OST_B[rows]
+      
+      Status_B[n:(n+loc-2)] <- 0
+      Status_B[n+loc-1] <- Delta_B[rows]
+      
+      lz <- length(Z_real[[rows]])
+      
+      if(loc > lz){
+        Z_real[[rows]][(lz + 1 ): loc] <- Z_real[[rows]][lz]
+      }
+      
+      Covariate_B[n:(n+loc-1)] <- Z_real[[rows]][1:loc]
+      
+    }
+    
+    else{
+      Start_B[n] <- T_obs[1]
+      
+      End_B[n] <- OST_B[rows]
+      
+      Status_B[n] <- Delta_B[rows]
+      
+      Covariate_B[n] <- Z_real[[rows]][1]
+    }
+    
+    n <- n+loc
+    
+  }
+  
+  MySimu_B <- data.frame("start" = Start_B, "end" = End_B, "covs" = Covariate_B, "event" = Status_B)
+  
+  ##Start from the first observed failure
+  sample_size_B <- dim(MySimu_B)[1]#update sample size
+  MySimu_B <- MySimu_B[order(MySimu_B$covs),]
+  location_start <- min(seq(sample_size_B)[MySimu_B$event > 0])
+  MySimu_B <- MySimu_B[location_start:sample_size_B,]
+  
+  #estimation
+  iso_B <- isoph_td(Start = MySimu_B$start, Stop = MySimu_B$end, Status = MySimu_B$event, Z = MySimu_B$covs)
+  
+  #psi_hat <- iso_B$psi.hat
+  
+  
+  Tn[i] <- iso_B$ll_mono - iso_B$ll_linear
+}
+
+
+
+T_critical <- quantile(Tn, sig_level)
+```
+
+```{r}
+print(T_critical)
+print(Tobs)
+```
+```{r}
+#censoring rate
+1-mean(MySimu_ori$event)
+```
+
+```{r}
+plot(x = -(MySimu$covs + iso$zk), y = psi_hat, 
+     xlab = 'CD4 Counts(Z(t))', 
+     ylab = expression(paste("Fitted Value for ", phi(Z(t)))), 
+     ylim = c(-2.5, 1),
+     col = "red", type = "s", pch = 20, lty = 1)
+lines(x = -(MySimu$covs + iso$zk), y = mybeta*(MySimu$covs - iso$zk), col = "blue", type = "l", lty = 2, pch = 20)
+legend("topright", legend = c("Isotonic Proportional Hazards Model", "Cox model"), lty = c(1,2), col = c("red", "blue"), cex = 1.2)
+```
+
+
+
+### Stanford Heart Transplant Data
+
+```{r}
+library(survival)
+mydata_heart <- heart
+```
+

@@ -227,7 +227,7 @@ MySimu <- MySimu_ori[location_start:N,]
 #Estimate beta and phi
 iso <- isoph(Surv(stop, event) ~ iso(covs, shape = "inc"), data = MySimu)
 psi_hat <- iso$iso.cov$psi.hat
-nlpl_iso0 <- nlpl_noCensor_ind(
+nlpl_iso0 <- nlpl_Censor_ind(
                              surv_time = MySimu$stop, 
                              mono_f = psi_hat, 
                              uni_cov = MySimu$covs, 
@@ -662,6 +662,8 @@ sampsize_ori = dim(mydata)[1]
 
 ```
 
+
+
 # 4. 
 
 lung cancer dataset in 1994.
@@ -679,13 +681,17 @@ meal.cal: Calories consumed at meals
 wt.loss: Weight loss in last six months
 
 ```{r}
+coxph(Surv(time, status-1)~., cancer)
+```
+
+```{r}
 data(cancer, package="survival")
-HCData <- cancer
-cancer$status <- cancer$status - 1#dead = 1, censored = 0
-fit_lung <- coxph(Surv(time, status)~., HCData)
+HCData <- na.omit(data.frame("stop" = cancer$time, "covs" = -cancer$pat.karno, "event" = cancer$status-1))
+
+fit_lung <- coxph(Surv(stop, event)~., HCData)
 summary(fit_lung)
-plot(cancer$age, cancer$time)
-plot(cancer$ph.ecog, cancer$time)
+# plot(cancer$age, cancer$time)
+# plot(cancer$ph.ecog, cancer$time)
 ```
 
 
@@ -713,7 +719,7 @@ summary(fit_lung2)
 
 
 B_rep = 1  #500
-B_size = 200
+B_size = 500
 
 # library(survival)
 # library(isoSurv)
@@ -722,95 +728,105 @@ B_size = 200
 # source('myisoph_initial.R')
 # assignInNamespace("isoph.initial", isoph.initial, pos = "package:isoSurv")
                    
-mydata <- na.omit(HCData)
-sampsize_ori = dim(mydata)[1] #500
+sampsize_ori = nrow(HCData) #500
                     
 
   
-  #Generate the original sample
-  sig_level <- 0.05
-  tf <- FALSE #timefix
-  
-  MySimu_ori <- data.frame("stop" = mydata$time, "covs" = mydata$ph.ecog, "event" = mydata$status-1)
+#Generate the original sample
+sig_level <- 0.05
+tf <- FALSE #timefix
 
-  ##Start from the first(in covariate) observed failure
-  N <- length(mydata$ph.ecog)
-  MySimu_ori <- MySimu_ori[order(MySimu_ori$covs),]
-  location_start <- min(seq(N)[MySimu_ori$event > 0])
-  MySimu <- MySimu_ori[location_start:N,]
+MySimu_ori <- HCData
+
+##Start from the first(in covariate) observed failure
+N <- sampsize_ori
+MySimu_ori <- MySimu_ori[order(MySimu_ori$covs),]
+location_start <- min(seq(N)[MySimu_ori$event > 0])
+MySimu <- MySimu_ori[location_start:N,]
+
+#Estimate beta and phi
+iso <- isoph(Surv(stop, event) ~ iso(covs, shape = "inc"), data = MySimu)
+psi_hat <- iso$iso.cov$psi.hat
+nlpl_iso0 <- nlpl_Censor_ind(events = MySimu$event, 
+                             surv_time = MySimu$stop, 
+                             mono_f = psi_hat, 
+                             uni_cov = MySimu$covs, 
+                             zk = iso$Zk)
+
+cox <- coxph(Surv(stop, event) ~ covs, data = MySimu, control = coxph.control(timefix = tf), ties = "breslow")
+mybeta <- max(cox$coefficients,0)
+nlpl_cox0 <- nlpl_Censor_ind(events = MySimu$event, 
+                             surv_time = MySimu$stop, 
+                             est_beta = mybeta, 
+                             uni_cov = MySimu$covs,
+                             zk = iso$Zk)
+
+Tobs <- nlpl_iso0 - nlpl_cox0
+
+
+#Generate bootstrap sample
+Tn <- c()
+
+for (i in 1:B_size) {
+  covs_B <- MySimu_ori$covs
+  hzrate_B <- mybeta*covs_B
   
-  #Estimate beta and phi
-  iso <- isoph(Surv(stop, event) ~ iso(covs, shape = "inc"), data = MySimu)
-  psi_hat <- iso$iso.cov$psi.hat
-  nlpl_iso0 <- nlpl_Censor_ind(events = MySimu$event, 
-                               surv_time = MySimu$stop, 
-                               mono_f = psi_hat, 
-                               uni_cov = MySimu$covs, 
-                               zk = iso$Zk)
+  survgen <- SurvTime(beta = mybeta, MySimu_ori)
+  survtime_B <- survgen$res
   
-  cox <- coxph(Surv(stop, event) ~ covs, data = MySimu, control = coxph.control(timefix = tf), ties = "breslow")
-  mybeta <- max(cox$coefficients,0)
-  nlpl_cox0 <- nlpl_Censor_ind(events = MySimu$event, 
-                               surv_time = MySimu$stop, 
-                               est_beta = mybeta, 
-                               uni_cov = MySimu$covs,
-                               zk = iso$Zk)
+  cengen <- CenTime(X= MySimu_ori$stop, Status = MySimu_ori$event, M=max(MySimu_ori$stop))
+  centime_B <-cengen$res
   
-  Tobs <- nlpl_iso0 - nlpl_cox0
+  Status_B <- as.numeric(survtime_B <= centime_B)
+  X_B <- pmin(survtime_B, centime_B)
   
+  MySimu_B <- data.frame("stop" = X_B, "covs" = covs_B, "event" = Status_B)
+  MySimu_B <- MySimu_B[order(MySimu_B$covs),]#sort by covariate to drop the records with covariate smaller than the covariate of the first observed failure
+  location_start <- min(seq(N)[MySimu_B$event > 0])
+  MySimu_B <- MySimu_B[location_start:N,]
   
-  #Generate bootstrap sample
-  Tn <- c()
+  isofit <- isoph(Surv(stop, event) ~ iso(covs, shape = "inc"), data = MySimu_B)
+  nlpl_iso <- nlpl_Censor_ind(events = MySimu_B$event,
+                              mono_f = isofit$iso.cov$psi.hat, 
+                              uni_cov = MySimu_B$covs, 
+                              surv_time = MySimu_B$stop, 
+                              zk = isofit$Zk)
   
-  for (i in 1:B_size) {
-    covs_B <- MySimu_ori$covs
-    hzrate_B <- mybeta*covs_B
-    
-    survgen <- SurvTime(beta = mybeta, MySimu_ori)
-    survtime_B <- survgen$res
-    
-    cengen <- CenTime(X= MySimu_ori$stop, Status = MySimu_ori$event, M=max(MySimu_ori$stop))
-    centime_B <-cengen$res
-    
-    Status_B <- as.numeric(survtime_B <= centime_B)
-    X_B <- pmin(survtime_B, centime_B)
-    
-    MySimu_B <- data.frame("stop" = X_B, "covs" = covs_B, "event" = Status_B)
-    MySimu_B <- MySimu_B[order(MySimu_B$covs),]#sort by covariate to drop the records with covariate smaller than the covariate of the first observed failure
-    location_start <- min(seq(N)[MySimu_B$event > 0])
-    MySimu_B <- MySimu_B[location_start:N,]
-    
-    isofit <- isoph(Surv(stop, event) ~ iso(covs, shape = "inc"), data = MySimu_B)
-    nlpl_iso <- nlpl_Censor_ind(events = MySimu_B$event,
-                                mono_f = isofit$iso.cov$psi.hat, 
-                                uni_cov = MySimu_B$covs, 
-                                surv_time = MySimu_B$stop, 
-                                zk = isofit$Zk)
-    
-    coxfit <- coxph(Surv(stop, event) ~ covs, data = MySimu_B, control = coxph.control(timefix = tf), ties = "breslow")
-    beta_hat <- max(0, coxfit$coefficients)
-    nlpl_cox <- nlpl_Censor_ind(events = MySimu_B$event,
-                                est_beta = beta_hat, 
-                                uni_cov = MySimu_B$covs, 
-                                surv_time = MySimu_B$stop, 
-                                zk = isofit$Zk)
-    
-    Tn[i] <- nlpl_iso - nlpl_cox
-  }
+  coxfit <- coxph(Surv(stop, event) ~ covs, data = MySimu_B, control = coxph.control(timefix = tf), ties = "breslow")
+  beta_hat <- max(0, coxfit$coefficients)
+  nlpl_cox <- nlpl_Censor_ind(events = MySimu_B$event,
+                              est_beta = beta_hat, 
+                              uni_cov = MySimu_B$covs, 
+                              surv_time = MySimu_B$stop, 
+                              zk = isofit$Zk)
   
-  T_critical <- quantile(Tn, sig_level)
-  
-  
-  T_critical
-  
-  Tobs
-  
-  beta_hat
+  Tn[i] <- nlpl_iso - nlpl_cox
+}
+
+T_critical <- quantile(Tn, sig_level)
+
+
+T_critical
+
+Tobs
+
+beta_hat
   
  
 #save(results200, file = "dataSSurvFixKM200.rda")
 
 ```
+
+```{r}
+plot(x = -(MySimu$covs), y = psi_hat, 
+     xlab = 'Karnofsky Performance Score (Z)', 
+     ylab = expression(paste("Fitted Value for ", phi(Z))), 
+     ylim = c(-0.2,1.2),
+     col = "red", type = "s", pch = 20, lty = 1)
+lines(x = -(MySimu$covs ), y = -mybeta*(-MySimu$covs+iso$Zk), col = "blue", type = "l", lty = 2, pch = 20)
+legend("topright", legend = c("Isotonic Proportional Hazards Model", "Cox Model"), lty = c(1,2), col = c("red", "blue"), cex = 1)
+```
+
 
 
 
@@ -850,11 +866,11 @@ data0 <- mgus
 data1 <- mgus1
 ```
 
+
 ```{r}
 # mgus#time independent
 # mgus1#time dependent
 
-MGData <- na.omit(mgus)
 fit_mg <- coxph(Surv(futime, death)~., MGData)
 summary(fit_mg)
 
@@ -873,7 +889,7 @@ summary(fit_mg4)
 ```
 
 
-Testing linearity of pctime.
+Testing linearity of mspike.
 
 ```{r, warning=FALSE}
 # source("Bootstrap_c_exp.R")
@@ -885,10 +901,10 @@ Testing linearity of pctime.
 #source("SurvTimeSmoothSurv.R")
 #source("CenTimeFix.R")
 
-
+MGData <- na.omit(mgus2)
 
 B_rep = 1  #500
-B_size = 200
+B_size = 100
 
 # library(survival)
 # library(isoSurv)
@@ -905,7 +921,7 @@ sampsize_ori = dim(MGData)[1] #500
   sig_level <- 0.05
   tf <- FALSE #timefix
   
-  MySimu_ori <- data.frame("stop" = MGData$futime, "covs" = MGData$pctime, "event" = MGData$death)
+  MySimu_ori <- data.frame("stop" = MGData$futime, "covs" = MGData$mspike, "event" = MGData$death)
 
   ##Start from the first(in covariate) observed failure
   N <- sampsize_ori
@@ -985,6 +1001,17 @@ sampsize_ori = dim(MGData)[1] #500
 #save(results200, file = "dataSSurvFixKM200.rda")
 
 ```
+
+```{r}
+plot(x = (MySimu$covs), y = psi_hat, 
+     xlab = 'Monoclonal Serum Spike (Z)', 
+     ylab = expression(paste("Fitted Value for ", phi(Z))), 
+     col = "red", type = "s", pch = 20, lty = 1)
+lines(x = (MySimu$covs ), y = mybeta*(MySimu$covs - iso$Zk), col = "blue", type = "l", lty = 2, pch = 20)
+legend("topleft", legend = c("Isotonic Proportional Hazards Model", "Cox Model"), lty = c(1,2), col = c("red", "blue"), cex = 1.2)
+```
+
+
 
 Testing linearity of age.
 
@@ -1099,6 +1126,15 @@ sampsize_ori = dim(MGData)[1] #500
 
 ```
 
+```{r}
+plot(x = (MySimu$covs), y = psi_hat, 
+     xlab = 'Age (Z)', 
+     ylab = expression(paste("Estimated Value for ", phi(Z))), 
+     col = "red", type = "s", pch = 20, lty = 1)
+lines(x = (MySimu$covs ), y = mybeta*(MySimu$covs - iso$Zk), col = "blue", type = "l", lty = 2, pch = 20)
+legend("topleft", legend = c("Isotonic Proportional Hazards Model", "Cox Model"), lty = c(1,2), col = c("red", "blue"), cex = 1.2)
+```
+
 
 # 6.
 
@@ -1108,6 +1144,10 @@ library(JM)
 mydata_tind <- aids.id
 mydata_td <- aids
 ```
+```{r}
+1-mean(mydata_tind$death) # censoring rate
+```
+
 
 ```{r}
 fit_aids <- coxph(Surv(stop, event)~., aids.id[-1])
@@ -1131,7 +1171,146 @@ sampsize_ori = dim(aids.id)[1]
   sig_level <- 0.05
   tf <- FALSE #timefix
   
-  MySimu_ori <- data.frame("stop" = aids.id$Time, "covs" = -aids.id$CD4, "event" = aids.id$death)
+  MySimu_ori <- data.frame("stop" = aids.id$Time, "covs" = -aids.id$CD4, "event" = aids.id$event)
+
+  ##Start from the first(in covariate) observed failure
+  N <- sampsize_ori
+  MySimu_ori <- MySimu_ori[order(MySimu_ori$covs),]
+  location_start <- min(seq(N)[MySimu_ori$event > 0])
+  MySimu <- MySimu_ori[location_start:N,]
+  
+  #Estimate beta and phi
+  iso <- isoph(Surv(stop, event) ~ iso(covs, shape = "inc"), data = MySimu)
+  psi_hat <- iso$iso.cov$psi.hat
+  nlpl_iso0 <- nlpl_Censor_ind(events = MySimu$event, 
+                               surv_time = MySimu$stop, 
+                               mono_f = psi_hat, 
+                               uni_cov = MySimu$covs, 
+                               zk = iso$Zk)
+  
+  cox <- coxph(Surv(stop, event) ~ covs, data = MySimu, control = coxph.control(timefix = tf), ties = "breslow")
+  mybeta <- max(cox$coefficients,0)
+  nlpl_cox0 <- nlpl_Censor_ind(events = MySimu$event, 
+                               surv_time = MySimu$stop, 
+                               est_beta = mybeta, 
+                               uni_cov = MySimu$covs,
+                               zk = iso$Zk)
+  
+  Tobs <- nlpl_iso0 - nlpl_cox0
+  
+  plot(x = MySimu$covs - iso$Zk, y = psi_hat, type = 'l')
+  lines(x = MySimu$covs - iso$Zk, y = mybeta*(MySimu$covs - iso$Zk))
+  
+  
+  #Generate bootstrap sample
+  Tn <- c()
+  
+  for (i in 1:B_size) {
+    covs_B <- MySimu_ori$covs
+    hzrate_B <- mybeta*covs_B
+    
+    survgen <- SurvTime(beta = mybeta, MySimu_ori)
+    survtime_B <- survgen$res
+    
+    cengen <- CenTime(X= MySimu_ori$stop, Status = MySimu_ori$event, M=max(MySimu_ori$stop))
+    centime_B <-cengen$res
+    
+    Status_B <- as.numeric(survtime_B <= centime_B)
+    X_B <- pmin(survtime_B, centime_B)
+    
+    MySimu_B <- data.frame("stop" = X_B, "covs" = covs_B, "event" = Status_B)
+    MySimu_B <- MySimu_B[order(MySimu_B$covs),]#sort by covariate to drop the records with covariate smaller than the covariate of the first observed failure
+    location_start <- min(seq(N)[MySimu_B$event > 0])
+    MySimu_B <- MySimu_B[location_start:N,]
+    
+    isofit <- isoph(Surv(stop, event) ~ iso(covs, shape = "inc"), data = MySimu_B)
+    nlpl_iso <- nlpl_Censor_ind(events = MySimu_B$event,
+                                mono_f = isofit$iso.cov$psi.hat, 
+                                uni_cov = MySimu_B$covs, 
+                                surv_time = MySimu_B$stop, 
+                                zk = isofit$Zk)
+    
+    coxfit <- coxph(Surv(stop, event) ~ covs, data = MySimu_B, control = coxph.control(timefix = tf), ties = "breslow")
+    beta_hat <- max(0, coxfit$coefficients)
+    nlpl_cox <- nlpl_Censor_ind(events = MySimu_B$event,
+                                est_beta = beta_hat, 
+                                uni_cov = MySimu_B$covs, 
+                                surv_time = MySimu_B$stop, 
+                                zk = isofit$Zk)
+    
+    Tn[i] <- nlpl_iso - nlpl_cox
+  }
+  
+  T_critical <- quantile(Tn, sig_level)
+  
+  
+  T_critical
+  
+  Tobs
+  
+  beta_hat
+  
+ 
+#save(results200, file = "dataSSurvFixKM200.rda")
+
+```
+```{r}
+#censoring rate
+1-mean(aids.id$event)
+```
+
+```{r}
+plot(x = -(MySimu$covs + median(MySimu$covs)), y = psi_hat, 
+     xlab = 'CD4 Cell Count (Z)', 
+     ylab = expression(paste("Fitted Value for ", phi(Z))), 
+     col = "red", type = "s", pch = 20, lty = 1)
+lines(x = -(MySimu$covs + isofit$Zk), y = mybeta*(MySimu$covs - iso$Zk), col = "blue", type = "l", lty = 2, pch = 20)
+legend("topright", legend = c("Isotonic Proportional Hazards Model", "Cox Model"), lty = c(1,2), col = c("red", "blue"), cex = 1.2)
+```
+
+
+
+
+
+```{r}
+#in JM package
+#pbc2.id is time independent
+#pbc2 is time dependent
+
+```
+
+
+
+# 7.GBSG2
+
+```{r}
+# install.packages("ipred")
+library(TH.data)
+# data("GBSG2")
+1-mean(GBSG2$cens)
+```
+
+```{r}
+library(survival)
+ # censoring rate
+1-mean(gbsg$status)
+```
+```{r, warning = FALSE}
+library(isoSurv)
+
+B_rep = 1  #500
+B_size = 500
+                   
+# sampsize_ori = dim(GBSG2)[1] 
+sampsize_ori = dim(gbsg)[1] 
+                    
+
+  
+  #Generate the original sample
+  sig_level <- 0.05
+  tf <- FALSE #timefix
+  
+  MySimu_ori <- data.frame("stop" = gbsg$rfstime, "covs" = gbsg$nodes, "event" = gbsg$status)
 
   ##Start from the first(in covariate) observed failure
   N <- sampsize_ori
@@ -1215,23 +1394,142 @@ sampsize_ori = dim(aids.id)[1]
 
 ```
 
-
 ```{r}
-plot(x = -(MySimu$covs + median(MySimu$covs)), y = psi_hat, 
-     xlab = 'CD4 Cell Count (Z)', 
+plot(x = MySimu$covs + median(MySimu$covs), y = psi_hat, 
+     xlab = 'Number of Positive Nodes (Z)', 
      ylab = expression(paste("Fitted Value for ", phi(Z))), 
+     ylim = c(0,3),
      col = "red", type = "s", pch = 20, lty = 1)
-lines(x = -(MySimu$covs + isofit$Zk), y = mybeta*(MySimu$covs - iso$Zk), col = "blue", type = "l", lty = 2, pch = 20)
-legend("topright", legend = c("monotone hazard model", "Cox model"), lty = c(1,2), col = c("red", "blue"), cex = 1.2)
+lines(x = MySimu$covs + isofit$Zk, y = mybeta*(MySimu$covs - iso$Zk), col = "blue", type = "l", lty = 2, pch = 20)
+legend("bottomright", legend = c("Isotonic Proportional Hazards Model", "Cox Model"), lty = c(1,2), col = c("red", "blue"), cex = 1.2)
+```
+## Significance test
+```{r}
+summary(cox)
+```
+
+```{r}
+cox_sq <- coxph(Surv(stop, event) ~ (MySimu$covs)^2, data = MySimu, control = coxph.control(timefix = tf), ties = "breslow")
+summary(cox_sq)
+```
+
+```{r}
+cox_ln <- coxph(Surv(stop, event) ~ log(MySimu$covs), data = MySimu, control = coxph.control(timefix = tf), ties = "breslow")
+summary(cox_ln)
+```
+
+```{r}
+cox_sqrt <- coxph(Surv(stop, event) ~ sqrt(MySimu$covs), data = MySimu, control = coxph.control(timefix = tf), ties = "breslow")
+summary(cox_sqrt)
+```
+
+```{r}
+library(pracma)
+cox_3rt <- coxph(Surv(stop, event) ~ nthroot(MySimu$covs, 3), data = MySimu, control = coxph.control(timefix = tf), ties = "breslow")
+summary(cox_3rt)
 ```
 
 
 
+## lileihood ratio test for log linearity
+https://stats.stackexchange.com/questions/370301/check-log-linearity-of-a-continuous-variable-to-predict-survival
+
+```{r}
+library("lattice")
+library("splines")
+```
+
+```{r}
+# fit a Cox model with a linear effect for 'risk_factor'
+cox_mod1 <- coxph(Surv(rfstime, status) ~ nodes, data = gbsg)
+
+# fit a Cox model with a nonlinear effect for 'risk_factor' using natural cubic splines
+cox_mod2 <- coxph(Surv(rfstime, status) ~ ns(nodes, 4), data = gbsg)
+
+# likelihood ratio test for linearity
+anova(cox_mod1, cox_mod2)
+```
+
+```{r}
+# Create an effect plot to depict the relationship
+ND <- with(gbsg, data.frame(nodes = seq(min(gbsg$nodes),max(gbsg$nodes), length.out = 500)))
+
+prs <- predict(cox_mod2, newdata = ND, type = "lp", se.fit = TRUE)
+ND$pred <- prs[[1]]
+ND$se <- prs[[2]]
+ND$lo <- ND$pred - 1.96 * ND$se
+ND$up <- ND$pred + 1.96 * ND$se
+
+xyplot(pred + lo + up ~ nodes, data = ND,
+       type = "l", col = "black", lwd = 2, lty = c(1, 2, 2),
+       abline = list(h = 0, lty = 2, lwd = 2, col = "red"),
+       xlab = "Risk Factor", ylab = "log Hazard Ratio")
+```
+
+## Residual Method
+
+```{r}
+library(timereg)
+
+# fit <- cox.aalen(Surv(rfstime, status)~prop(nodes), data = gbsg, weighted.test = 0, residuals = 1, rate.sim=0,n.sim=500)
+fit <- aalen(Surv(rfstime, status)~nodes, data = gbsg, n.sim = 1000, residuals = 1)
+summary(fit)
+```
 
 
 ```{r}
-#in JM package
-#pbc2.id is time independent
-#pbc2 is time dependent
-
+# constructs and simulates cumulative residuals versus age groups
+fit.mg<-cum.residuals(fit,data=gbsg,n.sim=500,
+modelmatrix=model.matrix(~-1+factor(cut(nodes,3)),gbsg))
+par(mfrow=c(1,4))
+# cumulative residuals with confidence intervals
+plot(fit.mg);
+# cumulative residuals versus processes under model
+plot(fit.mg,score=1);
+summary(fit.mg)
 ```
+
+
+```{r}
+# residual.fit = cum.residuals(fit, data = gbsg, cum.resid = 1, n.sim = 100)
+# cumulative residuals vs. covariates Lin, Wei, Ying style
+fit.mg<-cum.residuals(fit,data=gbsg,cum.resid=1,n.sim=1000)
+par(mfrow=c(1,1))
+plot(fit.mg,score=2)
+summary(fit.mg)
+```
+
+```{r}
+fit <- cox.aalen(Surv(rfstime, status)~prop(nodes), data = gbsg, residuals = 1, rate.sim=0,n.sim=500)
+summary(fit)
+```
+
+```{r}
+resids.ut = cum.residuals(fit, data=gbsg, cum.resid = 1, n.sim = 500)
+plot(resids.ut, score = 2, xlab = "nodes")
+summary(resids.ut)
+```
+## Including spline 
+```{r}
+mfit <- coxph(Surv(rfstime, status) ~ pspline(nodes,df = 5), data = gbsg)
+mfit
+```
+
+```{r}
+termplot(mfit, term = 1, se = TRUE, col.term = 1, col.se = 1)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
